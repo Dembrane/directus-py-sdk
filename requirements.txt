@@ -1,0 +1,7 @@
+requests
+urllib3
+sqlparse
+ruff
+mypy
+types-requests
+types-urllib3

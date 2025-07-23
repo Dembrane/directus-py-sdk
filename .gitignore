@@ -1,6 +1,8 @@
 help_pip_publication.md
-.venv
+venv
 dist
 build
 directus_sdk_py.egg-info
 .idea
+test.py
+__pycache__
