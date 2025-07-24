@@ -48,10 +48,10 @@ class DirectusClient:
             self.login(email, password)
         else:
             pass
-    
 
-
-    def login(self, email: Optional[str] = None, password: Optional[str] = None) -> dict:
+    def login(
+        self, email: Optional[str] = None, password: Optional[str] = None
+    ) -> dict:
         """
         Login with the /auth/login endpoint.
 
@@ -163,6 +163,7 @@ class DirectusClient:
         )
         return clean_path
 
+    # TODO: add type hinting for the output_type
     def get(self, path, output_type: str = "json", **kwargs):
         """
         Perform a GET request to the specified path.
@@ -181,12 +182,23 @@ class DirectusClient:
             verify=self.verify,
             **kwargs,
         )
-        if "errors" in data.text:
-            raise AssertionError(data.json()["errors"])
-        if output_type == "csv":
+        try:
+            data_json = data.json()
+        except json.JSONDecodeError:
             return data.text
 
-        return data.json()["data"]
+        if "errors" in data_json:
+            raise AssertionError(data_json["errors"])
+
+        if output_type == "csv":
+            return data.text
+        # TODO: verify output data type
+        # elif output_type == "text":
+        #     return data.text
+        # elif output_type == "raw":
+        #     return data.content
+        else:
+            return data_json["data"]
 
     def post(self, path, **kwargs):
         """
@@ -210,7 +222,7 @@ class DirectusClient:
 
         return response.json()
 
-    def search(self, path, query: Dict = None, **kwargs):
+    def search(self, path, query: Optional[Dict] = None, **kwargs):
         """
         Perform a SEARCH request to the specified path.
 
@@ -286,7 +298,7 @@ class DirectusClient:
         """
         return self.get("/users/me")
 
-    def get_users(self, query: Dict = None, **kwargs):
+    def get_users(self, query: Optional[Dict] = None, **kwargs):
         """
         Get users based on the provided query.
 
@@ -336,7 +348,7 @@ class DirectusClient:
         """
         self.delete(f"/users/{user_id}", **kwargs)
 
-    def get_files(self, query: Dict = None, **kwargs):
+    def get_files(self, query: Optional[Dict] = None, **kwargs):
         """
         Get files based on the provided query.
 
@@ -534,7 +546,7 @@ class DirectusClient:
         """
         return self.get(f"/collections/{collection_name}", **kwargs)
 
-    def get_items(self, collection_name, query: Dict = None, **kwargs):
+    def get_items(self, collection_name, query: Optional[Dict] = None, **kwargs):
         """
         Get items from a collection based on the provided query.
 
@@ -548,7 +560,9 @@ class DirectusClient:
         """
         return self.search(f"/items/{collection_name}", query=query, **kwargs)
 
-    def get_item(self, collection_name, item_id, query: Dict = None, **kwargs):
+    def get_item(
+        self, collection_name, item_id, query: Optional[Dict] = None, **kwargs
+    ):
         """
         Get a single item from a collection based on the provided query.
 
@@ -703,7 +717,7 @@ class DirectusClient:
             self.delete(f"/items/{collection_name}", json=item_ids[i : i + 100])
 
     def get_all_fields(
-        self, collection_name: str, query: Dict = None, **kwargs
+        self, collection_name: str, query: Optional[Dict] = None, **kwargs
     ) -> list:
         """
         Get all fields of a collection based on the provided query.
@@ -740,7 +754,7 @@ class DirectusClient:
         )
 
     def get_all_user_created_collection_names(
-        self, query: Dict = None, **kwargs
+        self, query: Optional[Dict] = None, **kwargs
     ) -> list:
         """
         Get all user-created collection names based on the provided query.
@@ -760,7 +774,7 @@ class DirectusClient:
         ]
 
     def get_all_fk_fields(
-        self, collection_name: str, query: Dict = None, **kwargs
+        self, collection_name: str, query: Optional[Dict] = None, **kwargs
     ) -> list:
         """
         Get all foreign key fields of a collection based on the provided query.
@@ -776,7 +790,9 @@ class DirectusClient:
         fields = self.search(f"/fields/{collection_name}", query=query, **kwargs)
         return [field for field in fields if field["schema"].get("foreign_key_table")]
 
-    def get_relations(self, collection_name: str, query: Dict = None, **kwargs) -> list:
+    def get_relations(
+        self, collection_name: str, query: Optional[Dict] = None, **kwargs
+    ) -> list:
         """
         Get all relations of a collection based on the provided query.
 
@@ -823,8 +839,7 @@ class DirectusClient:
         else:
             q = [query]
 
-        query = {"query": {"search": q}}
-        return query
+        return {"query": {"search": q}}
 
     def _validate_auth_response(self, response: requests.Response) -> requests.Response:
         """
@@ -845,18 +860,27 @@ class DirectusClient:
                 raise DirectusAuthError(
                     message=error.get("message", "Unknown authentication error"),
                     code=error.get("code"),
-                    extensions=error.get("extensions")
+                    extensions=error.get("extensions"),
                 )
             if "data" not in auth_data:
-                raise DirectusAuthError("Invalid response format received during login: missing 'data' field")
+                raise DirectusAuthError(
+                    "Invalid response format received during login: missing 'data' field"
+                )
             auth = auth_data["data"]
             missing_fields = [field for field in required_fields if field not in auth]
             if missing_fields:
-                raise DirectusAuthError(f"Missing required fields in response: {', '.join(missing_fields)}")
+                raise DirectusAuthError(
+                    f"Missing required fields in response: {', '.join(missing_fields)}"
+                )
             return response
-        except (KeyError, ValueError, json.JSONDecodeError, requests.exceptions.HTTPError) as e:
-            raise DirectusAuthError(f"Invalid response format from API: {str(e)}")  
-    
+        except (
+            KeyError,
+            ValueError,
+            json.JSONDecodeError,
+            requests.exceptions.HTTPError,
+        ) as e:
+            raise DirectusAuthError(f"Invalid response format from API: {str(e)}")
+
     def _get_validated_auth_data(self, response: requests.Response) -> dict:
         """
         Get the validated authentication data from the Directus API.
@@ -868,7 +892,8 @@ class DirectusClient:
             dict: The validated authentication data.
         """
         auth_data = self._validate_auth_response(response)
-        return auth_data.json()['data']
+        return auth_data.json()["data"]
+
 
 @dataclass
 class DOp:
@@ -995,7 +1020,7 @@ class SQLToDirectusConverter:
         Extrait les champs ORDER BY de la requête SQL
         Retourne une liste de champs avec '-' pour DESC
         """
-        order_fields = []
+        order_fields: List[str] = []
         in_order_by = False
 
         for token in tokens:
@@ -1174,7 +1199,6 @@ class SQLToDirectusConverter:
     def _parse_where_conditions(self, where_clause: Where) -> List[Dict]:
         """Parse WHERE clause conditions with support for groups"""
         conditions = []
-        current_group = []
         current_operator = "_and"
 
         for token in where_clause.tokens:
