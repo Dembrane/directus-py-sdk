@@ -14,3 +14,11 @@ class DirectusAuthError(Exception):
         self.code = code
         self.extensions = extensions or {}
         super().__init__(self.message)
+
+class DirectusServerError(Exception):
+    """Exception raised for server connection errors to Directus API."""
+    pass
+
+class DirectusBadRequest(Exception):
+    """Exception raised for bad requests to Directus API (e.g., assertion errors)."""
+    pass

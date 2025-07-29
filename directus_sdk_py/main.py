@@ -10,7 +10,7 @@ import sqlparse
 from sqlparse.sql import Where, Comparison, Token
 from sqlparse.tokens import Keyword
 
-from directus_sdk_py.exceptions import DirectusAuthError
+from directus_sdk_py.exceptions import DirectusAuthError, DirectusServerError, DirectusBadRequest
 
 
 class DirectusClient:
@@ -176,29 +176,34 @@ class DirectusClient:
         Returns:
             dict or str: The response data.
         """
-        data = requests.get(
-            self.clean_url(self.url, path),
-            headers={"Authorization": f"Bearer {self.get_token()}"},
-            verify=self.verify,
-            **kwargs,
-        )
         try:
-            data_json = data.json()
-        except json.JSONDecodeError:
-            return data.text
+            data = requests.get(
+                self.clean_url(self.url, path),
+                headers={"Authorization": f"Bearer {self.get_token()}"},
+                verify=self.verify,
+                **kwargs,
+            )
+            try:
+                data_json = data.json()
+            except json.JSONDecodeError:
+                return data.text
 
-        if "errors" in data_json:
-            raise AssertionError(data_json["errors"])
+            if "errors" in data_json:
+                raise AssertionError(data_json["errors"])
 
-        if output_type == "csv":
-            return data.text
-        # TODO: verify output data type
-        # elif output_type == "text":
-        #     return data.text
-        # elif output_type == "raw":
-        #     return data.content
-        else:
-            return data_json["data"]
+            if output_type == "csv":
+                return data.text
+            # TODO: verify output data type
+            # elif output_type == "text":
+            #     return data.text
+            # elif output_type == "raw":
+            #     return data.content
+            else:
+                return data_json["data"]
+        except requests.exceptions.ConnectionError as e:
+            raise DirectusServerError(e) from e
+        except AssertionError as e:
+            raise DirectusBadRequest(e) from e
 
     def post(self, path, **kwargs):
         """
@@ -211,16 +216,21 @@ class DirectusClient:
         Returns:
             dict: The response data.
         """
-        response = requests.post(
-            self.clean_url(self.url, path),
-            headers={"Authorization": f"Bearer {self.get_token()}"},
-            verify=self.verify,
-            **kwargs,
-        )
-        if response.status_code != 200:
-            raise AssertionError(response.text)
+        try:
+            response = requests.post(
+                self.clean_url(self.url, path),
+                headers={"Authorization": f"Bearer {self.get_token()}"},
+                verify=self.verify,
+                **kwargs,
+            )
+            if response.status_code != 200:
+                raise AssertionError(response.text)
 
-        return response.json()
+            return response.json()
+        except requests.exceptions.ConnectionError as e:
+            raise DirectusServerError(e) from e
+        except AssertionError as e:
+            raise DirectusBadRequest(e) from e
 
     def search(self, path, query: Optional[Dict] = None, **kwargs):
         """
@@ -235,19 +245,24 @@ class DirectusClient:
             dict: The response data.
         """
         headers = {"Authorization": f"Bearer {self.get_token()}"}
-        response = requests.request(
-            "SEARCH",
-            self.clean_url(self.url, path),
-            headers=headers,
-            json=query,
-            verify=self.verify,
-            **kwargs,
-        )
-
         try:
-            return response.json()["data"]
-        except Exception as e:
-            return {"error": f"No data found for this request : {e}"}
+            response = requests.request(
+                "SEARCH",
+                self.clean_url(self.url, path),
+                headers=headers,
+                json=query,
+                verify=self.verify,
+                **kwargs,
+            )
+
+            try:
+                return response.json()["data"]
+            except Exception as e:
+                return {"error": f"No data found for this request : {e}"}
+        except requests.exceptions.ConnectionError as e:
+            raise DirectusServerError(e) from e
+        except AssertionError as e:
+            raise DirectusBadRequest(e) from e
 
     def delete(self, path, **kwargs):
         """
@@ -257,14 +272,19 @@ class DirectusClient:
             path (str): The API endpoint path.
             **kwargs: Additional keyword arguments to pass to the request.
         """
-        response = requests.delete(
-            self.clean_url(self.url, path),
-            headers={"Authorization": f"Bearer {self.get_token()}"},
-            verify=self.verify,
-            **kwargs,
-        )
-        if response.status_code != 204:
-            raise AssertionError(response.text)
+        try:
+            response = requests.delete(
+                self.clean_url(self.url, path),
+                headers={"Authorization": f"Bearer {self.get_token()}"},
+                verify=self.verify,
+                **kwargs,
+            )
+            if response.status_code != 204:
+                raise AssertionError(response.text)
+        except requests.exceptions.ConnectionError as e:
+            raise DirectusServerError(e) from e
+        except AssertionError as e:
+            raise DirectusBadRequest(e) from e
 
     def patch(self, path, **kwargs):
         """
@@ -277,17 +297,22 @@ class DirectusClient:
         Returns:
             dict: The response data.
         """
-        response = requests.patch(
-            self.clean_url(self.url, path),
-            headers={"Authorization": f"Bearer {self.get_token()}"},
-            verify=self.verify,
-            **kwargs,
-        )
+        try:
+            response = requests.patch(
+                self.clean_url(self.url, path),
+                headers={"Authorization": f"Bearer {self.get_token()}"},
+                verify=self.verify,
+                **kwargs,
+            )
 
-        if response.status_code not in [200, 204]:
-            raise AssertionError(response.text)
+            if response.status_code not in [200, 204]:
+                raise AssertionError(response.text)
 
-        return response.json()
+            return response.json()
+        except requests.exceptions.ConnectionError as e:
+            raise DirectusServerError(e) from e
+        except AssertionError as e:
+            raise DirectusBadRequest(e) from e
 
     def me(self):
         """
@@ -374,10 +399,15 @@ class DirectusClient:
         """
         url = f"{self.url}/files/{file_id}"
         headers = {"Authorization": f"Bearer {self.get_token()}"}
-        response = requests.get(url, headers=headers, verify=self.verify, **kwargs)
-        if response.status_code != 200:
-            raise AssertionError(response.text)
-        return response.content
+        try:
+            response = requests.get(url, headers=headers, verify=self.verify, **kwargs)
+            if response.status_code != 200:
+                raise AssertionError(response.text)
+            return response.content
+        except requests.exceptions.ConnectionError as e:
+            raise DirectusServerError(e) from e
+        except AssertionError as e:
+            raise DirectusBadRequest(e) from e
 
     def download_file(self, file_id: str, file_path: str) -> None:
         """
@@ -388,12 +418,16 @@ class DirectusClient:
         """
         url = f"{self.url}/assets/{file_id}?download="
         headers = {"Authorization": f"Bearer {self.get_token()}"}
-        response = requests.get(url, headers=headers)
-
-        if response.status_code != 200:
-            raise AssertionError(response.text)
-        with open(file_path, "wb") as file:
-            file.write(response.content)
+        try:
+            response = requests.get(url, headers=headers)
+            if response.status_code != 200:
+                raise AssertionError(response.text)
+            with open(file_path, "wb") as file:
+                file.write(response.content)
+        except requests.exceptions.ConnectionError as e:
+            raise DirectusServerError(e) from e
+        except AssertionError as e:
+            raise DirectusBadRequest(e) from e
 
     def download_photo(
         self, file_id: str, file_path: str, display: dict = {}, transform: list = []
@@ -429,13 +463,18 @@ class DirectusClient:
 
         url = f"{self.url}/assets/{file_id}?download="
         headers = {"Authorization": f"Bearer {self.get_token()}"}
-        response = requests.get(
-            url, headers=headers, params=display, verify=self.verify
-        )
-        if response.status_code != 200:
-            raise AssertionError(response.text)
-        with open(file_path, "wb") as file:
-            file.write(response.content)
+        try:
+            response = requests.get(
+                url, headers=headers, params=display, verify=self.verify
+            )
+            if response.status_code != 200:
+                raise AssertionError(response.text)
+            with open(file_path, "wb") as file:
+                file.write(response.content)
+        except requests.exceptions.ConnectionError as e:
+            raise DirectusServerError(e) from e
+        except AssertionError as e:
+            raise DirectusBadRequest(e) from e
 
     def get_url_file(
         self, file_id: str, display: dict = {}, transform: list = []
@@ -502,26 +541,31 @@ class DirectusClient:
         """
         url = f"{self.url}/files"
         headers = {"Authorization": f"Bearer {self.get_token()}"}
-        with open(file_path, "rb") as file:
-            files = {"file": file}
+        try:
+            with open(file_path, "rb") as file:
+                files = {"file": file}
 
-            response = requests.post(
-                url, headers=headers, files=files, verify=self.verify
-            )
-        if response.status_code != 200:
-            raise AssertionError(response.text)
+                response = requests.post(
+                    url, headers=headers, files=files, verify=self.verify
+                )
+            if response.status_code != 200:
+                raise AssertionError(response.text)
 
-        r = response.json()["data"]
-        # Mettre à jour les métadonnées du fichier
-        data["type"] = self.define_file_type(file_path)
-        if data and response.json()["data"]:
-            file_id = response.json()["data"]["id"]
-            # Mettre à jour le type du fichier
+            r = response.json()["data"]
+            # Mettre à jour les métadonnées du fichier
+            data["type"] = self.define_file_type(file_path)
+            if data and response.json()["data"]:
+                file_id = response.json()["data"]["id"]
+                # Mettre à jour le type du fichier
 
-            r = self.patch(f"/files/{file_id}", json=data)
-            r = r["data"]
+                r = self.patch(f"/files/{file_id}", json=data)
+                r = r["data"]
 
-        return r
+            return r
+        except requests.exceptions.ConnectionError as e:
+            raise DirectusServerError(e) from e
+        except AssertionError as e:
+            raise DirectusBadRequest(e) from e
 
     def delete_file(self, file_id, **kwargs):
         """
