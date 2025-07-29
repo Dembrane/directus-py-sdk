@@ -1,8 +1,8 @@
 # Directus SDK for Python
 
-[![PyPI version](https://badge.fury.io/py/directus-sdk-py.svg)](https://badge.fury.io/py/directus-sdk-py)
+[![PyPI version](https://badge.fury.io/py/directus-py-sdk.svg)](https://badge.fury.io/py/directus-py-sdk)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Python Version](https://img.shields.io/pypi/pyversions/directus-sdk-py.svg)](https://pypi.org/project/directus-sdk-py/)
+[![Python Version](https://img.shields.io/pypi/pyversions/directus-py-sdk.svg)](https://pypi.org/project/directus-py-sdk/)
 
 A Python SDK for interacting with Directus, an open-source headless CMS and API platform.
 
@@ -35,7 +35,7 @@ providing a set of methods that you can use to perform common tasks.
 You can install the Directus Python SDK using pip:
 
 ```bash
-pip install directus-sdk-py
+pip install directus-py-sdk
 ```
 
 ## Usage
@@ -244,5 +244,9 @@ This project is licensed under the MIT License.
 
 ## Acknowledgements
 
-This library was inspired by the [directus-sdk-python](https://github.com/Jason-CKY/directus-sdk-python) project, which
+This library was inspired by the [directus-py-sdkthon](https://github.com/Jason-CKY/directus-py-sdkthon) project, which
 is also released under the MIT License. Special thanks to the contributors of that project for their work.
+
+
+## Future scope
+1. Add builder pattern

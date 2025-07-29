@@ -9,14 +9,14 @@ README = (HERE / "README.md").read_text()
 
 # This call to setup() does all the work
 setup(
-    name="directus-sdk-py",
+    name="directus-py-sdk",
     version="1.1.0",
     description="Python SDK for interacting with Directus API (colletion, items, users, files)",
     long_description=README,
     long_description_content_type="text/markdown",
-    url="https://github.com/reise69/directus-py-sdk",
-    author="Alban Lamberet",
-    author_email="contact@refbax.com",
+    url="https://github.com/Dembrane/directus-py-sdk",
+    author="Dembrane",
+    author_email="info@dembrane.com",
     license="MIT",
     classifiers=[
         "License :: OSI Approved :: MIT License",
@@ -34,7 +34,7 @@ setup(
     ],
     entry_points={
         "console_scripts": [
-            "directus-sdk-py=directus_sdk_py.__main__:main",
+            "directus-py-sdk=directus_sdk_py.__main__:main",
         ]
     },
 )
