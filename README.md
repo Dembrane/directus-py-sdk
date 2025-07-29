@@ -45,7 +45,7 @@ Here are some examples of how to use the Directus Python SDK:
 ### Initialize the Client
 
 ```python
-from directus_sdk_py import DirectusClient
+from directus_py_sdk import DirectusClient
 
 client = DirectusClient(url='https://your-directus-instance.com', token='your_access_token')
 ```
@@ -188,7 +188,7 @@ client.delete_item(collection_name='your_collection', item_id='item_id')
 The new DirectusQueryBuilder provides a fluent interface for constructing complex queries:
 
 ```python
-from directus_sdk_py import DirectusQueryBuilder, DOp
+from directus_py_sdk import DirectusQueryBuilder, DOp
 
 # Create a builder instance
 builder = DirectusQueryBuilder()
@@ -214,7 +214,7 @@ items = client.get_items("articles", query)
 For those like me, like to use SQL instead of Directus query language, you can use the `SQLToDirectusConverter` to convert your SQL queries to Directus query format:
 
 ```python
-from directus_sdk_py import SQLToDirectusConverter
+from directus_py_sdk import SQLToDirectusConverter
 
 converter = SQLToDirectusConverter()
 

@@ -10,7 +10,7 @@ import sqlparse
 from sqlparse.sql import Where, Comparison, Token
 from sqlparse.tokens import Keyword
 
-from directus_sdk_py.exceptions import DirectusAuthError, DirectusServerError, DirectusBadRequest
+from directus_py_sdk.exceptions import DirectusAuthError, DirectusServerError, DirectusBadRequest
 
 
 class DirectusClient:
