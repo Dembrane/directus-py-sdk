@@ -5,12 +5,130 @@ from urllib3.exceptions import InsecureRequestWarning
 from typing import Dict, List, Union, Optional, Any
 import json
 from dataclasses import dataclass
+import time
 
 import sqlparse
 from sqlparse.sql import Where, Comparison, Token
 from sqlparse.tokens import Keyword
 
 from directus_py_sdk.exceptions import DirectusAuthError, DirectusServerError, DirectusBadRequest
+
+# HTTP status codes that are typically recoverable
+RECOVERABLE_STATUS_CODES = {
+    401,  # Unauthorized (token expired)
+    403,  # Forbidden (token invalid)
+    408,  # Request Timeout
+    429,  # Too Many Requests
+    500,  # Internal Server Error
+    502,  # Bad Gateway
+    503,  # Service Unavailable
+    504,  # Gateway Timeout
+}
+
+def is_recoverable_error(response: requests.Response) -> bool:
+    """
+    Check if the response status code indicates a recoverable error.
+    
+    Args:
+        response: The response object from the request
+        
+    Returns:
+        bool: True if the error is recoverable, False otherwise
+    """
+    return response.status_code in RECOVERABLE_STATUS_CODES
+
+def make_request_with_retry(
+    client,
+    method: str,
+    url: str,
+    *,  # Force keyword arguments after this point
+    max_retries: int = 3,
+    retry_delay: float = 1.0,
+    **kwargs
+) -> requests.Response:
+    """
+    Make an HTTP request with retry logic for recoverable errors.
+    
+    Args:
+        client: The DirectusClient instance
+        method: HTTP method to use
+        url: URL to make the request to
+        max_retries: Maximum number of retry attempts
+        retry_delay: Initial delay between retries in seconds
+        **kwargs: Additional arguments to pass to requests
+        
+    Returns:
+        requests.Response: The response from the server
+        
+    Raises:
+        requests.exceptions.RequestException: If the request fails after all retries
+    """
+    retries = 0
+    while retries < max_retries:
+        try:
+            # Try to refresh token before each request if using temporary token
+            if client.temporary_token is not None and hasattr(client, 'refresh_token'):
+                try:
+                    client.refresh()
+                except Exception:
+                    # If refresh fails, try to re-login
+                    if client.email and client.password:
+                        client.login(client.email, client.password)
+            
+            # Make the request
+            response = requests.request(method, url, **kwargs)
+            
+            # If it's a recoverable error, retry
+            if is_recoverable_error(response):
+                retries += 1
+                if retries == max_retries:
+                    response.raise_for_status()
+                
+                # Add exponential backoff
+                wait_time = retry_delay * (2 ** (retries - 1))
+                time.sleep(wait_time)
+                
+                # For auth errors, try to refresh token or re-login
+                if response.status_code in (401, 403):
+                    try:
+                        if client.email and client.password:
+                            client.login(client.email, client.password)
+                            # Update authorization header with new token
+                            if 'headers' in kwargs:
+                                kwargs['headers']['Authorization'] = f"Bearer {client.get_token()}"
+                    except Exception:
+                        continue
+                continue
+            
+            return response
+            
+        except requests.exceptions.RequestException as e:
+            # Check if the error has a response and if it's recoverable
+            if hasattr(e, 'response') and e.response is not None:
+                if not is_recoverable_error(e.response):
+                    raise
+            
+            retries += 1
+            if retries == max_retries:
+                raise
+            
+            # Add exponential backoff
+            wait_time = retry_delay * (2 ** (retries - 1))
+            time.sleep(wait_time)
+            
+            # If it's an auth error, try to refresh token or re-login
+            if hasattr(e, 'response') and e.response is not None and e.response.status_code in (401, 403):
+                try:
+                    if client.email and client.password:
+                        client.login(client.email, client.password)
+                        # Update authorization header with new token
+                        if 'headers' in kwargs:
+                            kwargs['headers']['Authorization'] = f"Bearer {client.get_token()}"
+                except Exception:
+                    continue
+    
+    # If we get here, we've exhausted all retries
+    return requests.request(method, url, **kwargs)
 
 
 class DirectusClient:
@@ -177,11 +295,16 @@ class DirectusClient:
             dict or str: The response data.
         """
         try:
-            data = requests.get(
-                self.clean_url(self.url, path),
-                headers={"Authorization": f"Bearer {self.get_token()}"},
-                verify=self.verify,
-                **kwargs,
+            headers = {"Authorization": f"Bearer {self.get_token()}"}
+            request_kwargs = {"headers": headers, "verify": self.verify}
+            request_kwargs.update(kwargs)
+            data = make_request_with_retry(
+                client=self,
+                method="GET",
+                url=self.clean_url(self.url, path),
+                max_retries=3,
+                retry_delay=1.0,
+                **request_kwargs
             )
             try:
                 data_json = data.json()
@@ -217,11 +340,16 @@ class DirectusClient:
             dict: The response data.
         """
         try:
-            response = requests.post(
-                self.clean_url(self.url, path),
-                headers={"Authorization": f"Bearer {self.get_token()}"},
-                verify=self.verify,
-                **kwargs,
+            headers = {"Authorization": f"Bearer {self.get_token()}"}
+            request_kwargs = {"headers": headers, "verify": self.verify}
+            request_kwargs.update(kwargs)
+            response = make_request_with_retry(
+                client=self,
+                method="POST",
+                url=self.clean_url(self.url, path),
+                max_retries=3,
+                retry_delay=1.0,
+                **request_kwargs
             )
             if response.status_code != 200:
                 raise AssertionError(response.text)
@@ -245,14 +373,16 @@ class DirectusClient:
             dict: The response data.
         """
         headers = {"Authorization": f"Bearer {self.get_token()}"}
+        request_kwargs = {"headers": headers, "verify": self.verify, "json": query}
+        request_kwargs.update(kwargs)
         try:
-            response = requests.request(
-                "SEARCH",
-                self.clean_url(self.url, path),
-                headers=headers,
-                json=query,
-                verify=self.verify,
-                **kwargs,
+            response = make_request_with_retry(
+                client=self,
+                method="SEARCH",
+                url=self.clean_url(self.url, path),
+                max_retries=3,
+                retry_delay=1.0,
+                **request_kwargs
             )
 
             try:
@@ -273,11 +403,16 @@ class DirectusClient:
             **kwargs: Additional keyword arguments to pass to the request.
         """
         try:
-            response = requests.delete(
-                self.clean_url(self.url, path),
-                headers={"Authorization": f"Bearer {self.get_token()}"},
-                verify=self.verify,
-                **kwargs,
+            headers = {"Authorization": f"Bearer {self.get_token()}"}
+            request_kwargs = {"headers": headers, "verify": self.verify}
+            request_kwargs.update(kwargs)
+            response = make_request_with_retry(
+                client=self,
+                method="DELETE",
+                url=self.clean_url(self.url, path),
+                max_retries=3,
+                retry_delay=1.0,
+                **request_kwargs
             )
             if response.status_code != 204:
                 raise AssertionError(response.text)
@@ -298,11 +433,16 @@ class DirectusClient:
             dict: The response data.
         """
         try:
-            response = requests.patch(
-                self.clean_url(self.url, path),
-                headers={"Authorization": f"Bearer {self.get_token()}"},
-                verify=self.verify,
-                **kwargs,
+            headers = {"Authorization": f"Bearer {self.get_token()}"}
+            request_kwargs = {"headers": headers, "verify": self.verify}
+            request_kwargs.update(kwargs)
+            response = make_request_with_retry(
+                client=self,
+                method="PATCH",
+                url=self.clean_url(self.url, path),
+                max_retries=3,
+                retry_delay=1.0,
+                **request_kwargs
             )
 
             if response.status_code not in [200, 204]:
@@ -399,8 +539,17 @@ class DirectusClient:
         """
         url = f"{self.url}/files/{file_id}"
         headers = {"Authorization": f"Bearer {self.get_token()}"}
+        request_kwargs = {"headers": headers, "verify": self.verify}
+        request_kwargs.update(kwargs)
         try:
-            response = requests.get(url, headers=headers, verify=self.verify, **kwargs)
+            response = make_request_with_retry(
+                client=self,
+                method="GET",
+                url=url,
+                max_retries=3,
+                retry_delay=1.0,
+                **request_kwargs
+            )
             if response.status_code != 200:
                 raise AssertionError(response.text)
             return response.content
@@ -418,8 +567,16 @@ class DirectusClient:
         """
         url = f"{self.url}/assets/{file_id}?download="
         headers = {"Authorization": f"Bearer {self.get_token()}"}
+        request_kwargs = {"headers": headers, "verify": self.verify}
         try:
-            response = requests.get(url, headers=headers)
+            response = make_request_with_retry(
+                client=self,
+                method="GET",
+                url=url,
+                max_retries=3,
+                retry_delay=1.0,
+                **request_kwargs
+            )
             if response.status_code != 200:
                 raise AssertionError(response.text)
             with open(file_path, "wb") as file:
@@ -439,33 +596,22 @@ class DirectusClient:
             file_id (str): The file ID.
             file_path (str): The path to save the file.
             display (dict): The parameters for displaying the file (size, quality, etc.).
-            transform (dict): The parameters for transforming the file, add a parameter like : transforms=[
-                    ["blur", 45],
-                    ["tint", "rgb(255, 0, 0)"],
-                    ["expand", { "right": 200, "bottom": 150 }]
-        Transformations:
-            fit — The fit of the thumbnail while always preserving the aspect ratio, can be any of the following options:
-                cover — Covers both width/height by cropping/clipping to fit
-                contain — Contain within both width/height using "letterboxing" as needed
-                inside — Resize to be as large as possible, ensuring dimensions are less than or equal to the requested width and height
-                outside — Resize to be as small as possible, ensuring dimensions are greater than or equal to the requested width and height
-            width — The width of the thumbnail in pixels
-            height — The height of the thumbnail in pixels
-            quality — The optional quality of the thumbnail (1 to 100)
-            withoutEnlargement — Disable image up-scaling
-            format — What file format to return the thumbnail in. One of auto, jpg, png, webp, tiff
-                auto — Will try to format it in webp or avif if the browser supports it, otherwise it will fallback to jpg.
-
+            transform (dict): The parameters for transforming the file.
         """
-
         if len(transform) > 0:
             display["transforms"] = json.dumps(transform)
 
         url = f"{self.url}/assets/{file_id}?download="
         headers = {"Authorization": f"Bearer {self.get_token()}"}
+        request_kwargs = {"headers": headers, "verify": self.verify, "params": display}
         try:
-            response = requests.get(
-                url, headers=headers, params=display, verify=self.verify
+            response = make_request_with_retry(
+                client=self,
+                method="GET",
+                url=url,
+                max_retries=3,
+                retry_delay=1.0,
+                **request_kwargs
             )
             if response.status_code != 200:
                 raise AssertionError(response.text)
@@ -544,20 +690,23 @@ class DirectusClient:
         try:
             with open(file_path, "rb") as file:
                 files = {"file": file}
-
-                response = requests.post(
-                    url, headers=headers, files=files, verify=self.verify
+                request_kwargs = {"headers": headers, "files": files, "verify": self.verify}
+                response = make_request_with_retry(
+                    client=self,
+                    method="POST",
+                    url=url,
+                    max_retries=3,
+                    retry_delay=1.0,
+                    **request_kwargs
                 )
             if response.status_code != 200:
                 raise AssertionError(response.text)
 
             r = response.json()["data"]
-            # Mettre à jour les métadonnées du fichier
+            # Update file metadata
             data["type"] = self.define_file_type(file_path)
             if data and response.json()["data"]:
                 file_id = response.json()["data"]["id"]
-                # Mettre à jour le type du fichier
-
                 r = self.patch(f"/files/{file_id}", json=data)
                 r = r["data"]
 
