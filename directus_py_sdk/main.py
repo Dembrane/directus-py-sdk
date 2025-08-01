@@ -115,17 +115,8 @@ def make_request_with_retry(
             # Add exponential backoff
             wait_time = retry_delay * (2 ** (retries - 1))
             time.sleep(wait_time)
-            
-            # If it's an auth error, try to refresh token or re-login
-            if hasattr(e, 'response') and e.response is not None and e.response.status_code in (401, 403):
-                try:
-                    if client.email and client.password:
-                        client.login(client.email, client.password)
-                        # Update authorization header with new token
-                        if 'headers' in kwargs:
-                            kwargs['headers']['Authorization'] = f"Bearer {client.get_token()}"
-                except Exception:
-                    continue
+            # Try again for all recoverable errors
+            continue
     
     # If we get here, we've exhausted all retries
     return requests.request(method, url, **kwargs)
